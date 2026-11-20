@@ -21,9 +21,7 @@ fi
 if [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
 fi
-if ! .venv/bin/python -c 'import flask, requests, keyring' 2>/dev/null; then
-  .venv/bin/python -m pip install -r requirements.txt
-fi
+.venv/bin/python -m pip --disable-pip-version-check install -q -r requirements.txt
 # Prefer the downloader and its matching YouTube components from this installation.
 if .venv/bin/python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
   if ! .venv/bin/python -c 'import yt_dlp_ejs; from yt_dlp.version import __version__; assert tuple(map(int, __version__.split(".")[:3])) >= (2026, 10, 26)' 2>/dev/null; then

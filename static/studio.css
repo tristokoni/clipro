@@ -62,3 +62,10 @@ h2 {font-weight:650}
 
 .btn[hidden] {display:none}
 .settings-grid form .btn {margin-bottom:6px}
+
+.edit-group {min-width:0;margin:18px 0;padding:14px 14px 3px;border:1px solid var(--line);border-radius:14px}
+.edit-group legend {font-weight:700;padding:0 6px;color:var(--white)}
+.check {display:flex;gap:8px;align-items:center;margin:0 0 12px;cursor:pointer}
+.check input {accent-color:var(--accent);width:17px;height:17px}
+.caption-sample {display:flex;justify-content:center;align-items:flex-end;height:100px;padding:9px;margin-bottom:12px;border-radius:10px;background:linear-gradient(140deg,#706084,#3b3247);color:white;font-weight:700;font-size:19px;text-shadow:0 1px 3px #181321}
+#exportState {min-height:1.3em;color:var(--muted);overflow-wrap:anywhere}

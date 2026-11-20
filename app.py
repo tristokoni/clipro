@@ -4,6 +4,7 @@ from threading import RLock
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from rendering import edit_options, render, SIZES
 from local_whisper import analyze_local
 from video_import import download_video, youtube_id
 from datetime import datetime
@@ -175,34 +176,32 @@ def clip(pid):
     hook=str(payload.get('hook','')).strip()[:100]
     cid=uuid.uuid4().hex[:10]; output=EXPORT / f'{cid}.mp4'
     ratio = payload.get('ratio', '9:16')
-    sizes = {'9:16': '1080:1920', '1:1': '1080:1080', '16:9': '1920:1080'}
-    if not isinstance(ratio, str) or ratio not in sizes:
+    if not isinstance(ratio, str) or ratio not in SIZES:
         return jsonify(error='Neplatný pomer strán.'), 400
-    size = sizes[ratio]
-    fill = f'scale={size}:force_original_aspect_ratio=increase,crop={size}'
-    fit = f'scale={size}:force_original_aspect_ratio=decrease'
-    if layout == 'fill':
-        vf = fill
-    elif layout == 'fit':
-        vf = f'{fit},pad={size}:(ow-iw)/2:(oh-ih)/2'
-    else:
-        vf = f'split[bg][fg];[bg]{fill},boxblur=25:5[base];[fg]{fit}[front];[base][front]overlay=(W-w)/2:(H-h)/2'
-    vf += ',setsar=1'
     muted = payload.get('muted') is True
-    # Hook stored as editable metadata; no font dependencies or unsafe drawtext input.
-    cmd=['ffmpeg','-hide_banner','-loglevel','error','-y','-ss',str(start),'-i',str(UPLOAD/p['source']),'-t',str(end-start),'-filter_threads','1','-vf',vf,'-c:v','libx264','-preset','veryfast','-crf','22','-pix_fmt','yuv420p','-c:a','aac','-b:a','160k','-movflags','+faststart',str(output)]
-    if muted:
-        cmd.insert(-1, '-an')
     try:
-        proc=subprocess.run(cmd,capture_output=True,text=True,timeout=900)
-        if proc.returncode:
-            output.unlink(missing_ok=True)
-            app.logger.warning('FFmpeg export failed for project %s', pid)
-            return jsonify(error='FFmpeg nedokončil export. Skontroluj vstupné video.'), 422
+        edits = edit_options(payload)
+        rows = []
+        if edits['captions']:
+            engine = payload.get('captionEngine', 'local')
+            if engine not in ('local', 'openai'):
+                raise ValueError('Neplatný zdroj titulkov.')
+            cache = UPLOAD / f'{pid}.{engine}.json'
+            if not cache.is_file():
+                raise ValueError('Najprv vytvor prepis v časti Momenty a titulky.')
+            rows = json.loads(cache.read_text(encoding='utf-8'))['captions']
+        length = render(UPLOAD / p['source'], output, start, end, ratio, layout, muted, edits, rows)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+    except (OSError, subprocess.CalledProcessError):
+        output.unlink(missing_ok=True)
+        app.logger.warning('FFmpeg export failed for project %s', pid)
+        return jsonify(error='Export zlyhal. Skontroluj video a voľné miesto na disku.'), 422
     except subprocess.TimeoutExpired:
         output.unlink(missing_ok=True)
-        return jsonify(error='Export prekročil časový limit.'),504
+        return jsonify(error='Export prekročil časový limit.'), 504
     entry={'id':cid,'name':f'Clip {len(p["clips"])+1}','start':start,'end':end,'layout':layout,'ratio':ratio,'muted':muted,'hook':hook,'file':output.name,'date':datetime.now().isoformat(timespec='minutes')}
+    entry.update(duration=length, edits=edits)
     try:
         with library_lock:
             data = load()
