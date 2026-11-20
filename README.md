@@ -18,6 +18,10 @@ python app.py
 
 3. Otvor http://127.0.0.1:5050
 
+## Import z YouTube
+
+V Prehľade vlož odkaz na konkrétne video alebo Shorts a klikni na **Stiahnuť do editora**. Rovnaké tlačidlo nájdeš pri videách v Trend Radare. Na Macu spúšťač doinštaluje yt-dlp cez Homebrew. Pri manuálnom spustení musí byť yt-dlp dostupný v PATH. Import podporuje ukončené verejne dostupné videá do 2 GB.
+
 ## Čo funguje
 - Upload vlastných MP4/MOV/MKV/WEBM/M4V súborov (max 2 GB)
 - Video prehrávač, označenie začiatku/konca, výber 15/30/60 sekúnd, tri pomery strán a tri režimy obrazu

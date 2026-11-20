@@ -1,5 +1,7 @@
 import os, json, uuid, subprocess, shutil, re
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from video_import import download_video, youtube_id
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template, send_from_directory
 from werkzeug.utils import secure_filename
@@ -48,13 +50,34 @@ def upload():
     ext=Path(secure_filename(file.filename)).suffix.lower()
     if ext not in ALLOWED: return jsonify(error='Nepodporovaný formát videa.'),400
     pid=uuid.uuid4().hex[:12]; path=UPLOAD / f'{pid}{ext}'; file.save(path)
+    return register_project(pid, path, secure_filename(file.filename))
+
+def register_project(pid, path, name):
     duration=probe(path)
     if not duration:
         path.unlink(missing_ok=True)
         return jsonify(error='Video sa nepodarilo načítať.'),400
-    record={'id':pid,'name':secure_filename(file.filename),'source':path.name,'duration':duration,'date':datetime.now().isoformat(timespec='minutes'),'clips':[]}
+    record={'id':pid,'name':name,'source':path.name,'duration':duration,'date':datetime.now().isoformat(timespec='minutes'),'clips':[]}
     data=load(); data.insert(0,record); save(data)
     return jsonify(record),201
+@app.post('/api/import')
+def import_video():
+    data = request.get_json(silent=True)
+    video_id = youtube_id(data.get('url') if isinstance(data, dict) else None)
+    if not video_id:
+        return jsonify(error='Vlož odkaz na konkrétne YouTube video alebo Shorts.'), 400
+    pid = uuid.uuid4().hex[:12]
+    try:
+        with TemporaryDirectory(dir=UPLOAD) as temp:
+            source, title = download_video(video_id, Path(temp))
+            path = UPLOAD / f'{pid}.mp4'
+            source.replace(path)
+        return register_project(pid, path, title)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 422
+    except OSError:
+        return jsonify(error='Video sa nepodarilo uložiť. Skontroluj voľné miesto.'), 500
+
 @app.get('/api/video/<pid>')
 def video(pid):
     p=find(pid)

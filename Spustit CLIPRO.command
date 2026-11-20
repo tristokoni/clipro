@@ -24,4 +24,11 @@ fi
 if ! .venv/bin/python -c 'import flask, requests, keyring' 2>/dev/null; then
   .venv/bin/python -m pip install -r requirements.txt
 fi
+if ! command -v yt-dlp >/dev/null; then
+  if command -v brew >/dev/null; then
+    brew install yt-dlp || echo "Import z YouTube vyžaduje yt-dlp. Lokálny editor je dostupný."
+  else
+    echo "Pre import z YouTube nainštaluj yt-dlp cez Homebrew."
+  fi
+fi
 exec .venv/bin/python launch_mac.py

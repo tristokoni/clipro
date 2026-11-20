@@ -25,7 +25,10 @@
 <div class="stat"><div class="stattop">Export videa <span class="icon">⚡︎</span></div><div class="num" style="font-size:22px" id="statEngine">—</div><small>FFmpeg</small></div>
 </div>
 <div class="cols"><section class="panel"><div class="panelhead"><h2>Začni novým videom</h2><span class="muted" style="font-size:12px">MP4 · MOV · MKV · WEBM</span></div>
-<div class="drop" id="drop"><div class="uploadicon">↑</div><strong>Presuň sem video</strong><p>Alebo vyber súbor zo svojho zariadenia</p><button class="btn primary" onclick="document.getElementById('file').click()">↑ Vybrať súbor</button><small>Maximálna veľkosť: 2 GB</small></div></section>
+<div class="drop" id="drop"><div class="uploadicon">↑</div><strong>Presuň sem video</strong><p>Alebo vyber súbor zo svojho zariadenia</p><button class="btn primary" onclick="document.getElementById('file').click()">↑ Vybrať súbor</button><small>Maximálna veľkosť: 2 GB</small></div>
+<form class="url-import" onsubmit="event.preventDefault();importVideo($('videoUrl').value,this.querySelector('button'))">
+<label class="field">Odkaz na YouTube alebo Shorts<input id="videoUrl" type="url" placeholder="https://www.youtube.com/watch?v=…" required></label>
+<button class="btn" type="submit">Stiahnuť do editora</button></form></section>
 <section class="panel"><div class="panelhead"><h2>Ako to funguje</h2></div><div class="steps">
 <div class="step"><span class="stepindex">01</span><div><strong>Nahraj video</strong><p>Vyber gameplay, podcast alebo záznam streamu.</p></div></div>
 <div class="step"><span class="stepindex">02</span><div><strong>Označ moment</strong><p>Nastav začiatok, koniec a pomer strán.</p></div></div>
@@ -56,6 +59,23 @@ function formatTime(seconds){let n=Math.floor(Number(seconds)||0);return `${Math
 function projectCard(p){return `<article class="project"><div class="thumb">▶︎</div><div class="projectcontent"><div class="projectname" title="${esc(p.name)}">${esc(p.name)}</div><div class="meta">${formatTime(p.duration)} · ${p.clips.length} klipov · ${p.date.slice(0,10)}</div><div class="projectactions"><button class="btn small primary" onclick="openProject('${p.id}')">✂︎ Otvoriť editor</button><button class="btn small danger" onclick="removeProject('${p.id}')">Zmazať</button></div></div></article>`}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 async function refresh(){try{let [a,h]=await Promise.all([fetch('/api/projects'),fetch('/api/health')]);projects=await a.json();$('analysisProject').replaceChildren(...projects.map(p=>new Option(p.name,p.id)));const health=await h.json();$('statProjects').textContent=projects.length;$('statClips').textContent=projects.reduce((v,p)=>v+p.clips.length,0);$('statMinutes').textContent=Math.round(projects.reduce((v,p)=>v+p.duration,0)/60);$('statEngine').textContent=health.ffmpeg?'Pripravený':'Nedostupný';let empt='<div class="empty">Zatiaľ žiadne projekty. Nahraj prvé video.</div>';$('recentProjects').innerHTML=projects.slice(0,3).map(projectCard).join('')||empt;$('allProjects').innerHTML=projects.map(projectCard).join('')||empt;if(selected){let p=projects.find(x=>x.id===selected);if(p)renderClips(p);else{selected=null;$('editorEmpty').style.display='block';$('editorWorkspace').style.display='none'}}}catch(e){toast('Nepodarilo sa načítať projekty.',true)}}
+let importing=false;
+async function importVideo(url,button){
+  if(importing)return toast('Prebieha sťahovanie videa.');
+  importing=true;
+  const label=button.textContent;
+  button.disabled=true;
+  button.textContent='Sťahujem video…';
+  try{
+    const response=await fetch('/api/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    const project=await response.json();
+    if(!response.ok)throw Error(project.error);
+    await refresh();
+    openProject(project.id);
+    toast('Video je pripravené na klipovanie.');
+  }catch(e){toast(e.message||'Sťahovanie zlyhalo.',true)}
+  finally{button.textContent=label;button.disabled=false;importing=false}
+}
 async function upload(file){if(!file)return;if(file.size>2*1024**3)return toast('Video presahuje limit 2 GB.',true);let data=new FormData();data.append('file',file);toast('Nahrávam video...');try{let r=await fetch('/api/upload',{method:'POST',body:data});let p=await r.json();if(!r.ok)throw Error(p.error);await refresh();openProject(p.id);toast('Video bolo nahrané.')}catch(e){toast(e.message||'Nahratie zlyhalo.',true)}$('file').value=''}
 $('file').addEventListener('change',e=>upload(e.target.files[0]));let drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');upload(e.dataTransfer.files[0])});
 function openProject(id){let p=projects.find(x=>x.id===id);if(!p)return;selected=id;stopAt=null;$('editorEmpty').style.display='none';$('editorWorkspace').style.display='grid';$('player').src='/api/video/'+id;$('videoTitle').textContent=p.name;$('editorSubtitle').textContent=p.name;$('start').value=0;$('end').value=Math.min(30,p.duration||30).toFixed(1);renderClips(p);navigate('editor')}
@@ -84,7 +104,12 @@ async function discoverVideos(channel=''){
     for(const item of data){
       const link=document.createElement('a');
       link.href='https://www.youtube.com/watch?v='+encodeURIComponent(item.video);
-      link.textContent=item.title; link.className='clipitem';box.append(link);
+      link.textContent=item.title;
+      const row=document.createElement('div');row.className='clipitem';
+      const button=document.createElement('button');button.className='btn small';
+      button.textContent='Stiahnuť do editora';
+      button.onclick=()=>importVideo(link.href,button);
+      row.append(link,button);box.append(row);
     }
     if(channel) monitorTimer=setTimeout(()=>discoverVideos(channel),300000);
   } catch(e){box.textContent=e.message}

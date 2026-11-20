@@ -57,3 +57,5 @@ h2 {font-weight:650}
   #dashboard .mainhead {align-items:start;flex-direction:column;justify-content:center}
 }
 .logo::after {content:"";border-top:7px solid transparent;border-bottom:7px solid transparent;border-left:11px solid white;margin-left:3px}
+
+.url-import {margin-top:20px;border-top:1px solid var(--line);padding-top:18px}
