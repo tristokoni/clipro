@@ -47,7 +47,7 @@
 <button class="btn primary" id="exportBtn" style="width:100%;margin:14px 0 26px" onclick="createClip()">⚡︎ Vygenerovať klip</button>
 <div class="panelhead"><h2>Hotové klipy</h2><span class="muted" id="clipCount">0</span></div><div class="cliplist" id="clipList"></div></div></div></div>
 <div id="radar" class="view"><div class="mainhead"><div><h1>Trend Radar<span style="color:var(--accent)">.</span></h1><p class="sub">Vyhľadávanie rastúcich videí a streamov.</p></div></div><section class="panel"><button class="btn primary" onclick="discoverVideos()">Populárne na Slovensku</button><label class="field">ID YouTube kanála<input id="channel" placeholder="UC…"></label><button class="btn" onclick="monitorChannel()">Sledovať živé vysielanie</button><div id="discoveryResults" aria-live="polite"></div></section></div>
-<div id="ai" class="view"><h1>Momenty a titulky</h1><section class="panel"><label class="field">Projekt<select id="analysisProject"></select></label><p>Whisper odošle zvuk do OpenAI na prepis. <button class="link" onclick="navigate('settings')">API kľúče</button></p><button class="btn primary" id="analyzeBtn" onclick="analyzeProject()">Analyzovať reč</button><div id="analysisResults" aria-live="polite"></div></section></div>
+<div id="ai" class="view"><h1>Momenty a titulky</h1><section class="panel"><label class="field">Projekt<select id="analysisProject"></select></label><label class="field">Spôsob prepisu<select id="engine"><option value="local">Lokálne · zadarmo</option><option value="openai">OpenAI API · platené</option></select></label><p id="engineNote">Pri prvom prepise sa stiahne model (78 MB). Zvuk spracuje tvoj počítač.</p><p> <button class="link" onclick="navigate('settings')">API kľúče</button></p><button class="btn primary" id="analyzeBtn" onclick="analyzeProject()">Analyzovať reč</button><div id="analysisResults" aria-live="polite"></div></section></div>
 <div id="settings" class="view"><div class="mainhead"><div><h1>Nastavenia</h1><p class="sub" id="storageNote">API kľúče</p></div></div><div class="settings-grid"><form class="panel" onsubmit="event.preventDefault();keySettings('openai',false)"><h2>OpenAI</h2><p>Whisper · prepis reči a časované titulky</p><p class="key-state" id="openai-state">Načítavam…</p><label class="field">API kľúč<input id="openai-key" type="password" autocomplete="off" spellcheck="false" required></label><button class="btn primary" type="submit">Použiť pre túto reláciu</button>
  <button class="btn remember" hidden type="button" onclick="keySettings('openai',false,true)">Uložiť do Kľúčenky</button>
  <button type="button" class="btn" onclick="keySettings('openai',true)">Odstrániť</button>
@@ -158,12 +158,13 @@ async function discoverVideos(channel=''){
   } catch(e){box.textContent=e.message}
 }
 function monitorChannel(){const channel=$('channel').value.trim();if(channel)discoverVideos(channel);else toast('Zadaj ID kanála.',true)}
+$('engine').onchange=()=>{$('engineNote').textContent=$('engine').value==='local'?'Pri prvom prepise sa stiahne model (78 MB). Zvuk spracuje tvoj počítač.':'Zvuk sa odošle do OpenAI. Prepis sa účtuje podľa cien API.'};
 async function analyzeProject(){
   const id=$('analysisProject').value, box=$('analysisResults');
   if(!id)return toast('Najprv nahraj video.',true);
-  $('analyzeBtn').disabled=true;box.textContent='Prepisujem reč…';
+  $('analyzeBtn').disabled=true;box.textContent=$('engine').value==='local'?'Pripravujem model a prepisujem reč na tvojom počítači…':'Prepisujem reč cez OpenAI…';
   try{
-    const res=await fetch('/api/analysis/'+id,{method:'POST'}), data=await res.json();
+    const res=await fetch('/api/analysis/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({engine:$('engine').value})}), data=await res.json();
     if(!res.ok)throw Error(data.error);
     box.textContent=data.moments.length?'Navrhnuté momenty':'Bez rozpoznanej reči.';
     for(const m of data.moments){

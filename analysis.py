@@ -42,7 +42,7 @@ def analyze(path, api_key):
             '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', '-f', 'segment',
             '-segment_time', '600', '-reset_timestamps', '1',
             str(Path(directory) / '%06d.wav')
-        ], check=True, capture_output=True)
+        ], check=True, capture_output=True, timeout=900)
         offset = 0.0
         for part in sorted(Path(directory).glob('*.wav')):
             with part.open('rb') as audio:
@@ -54,6 +54,10 @@ def analyze(path, api_key):
                                      end=round(offset + segment['end'], 3), text=text))
             with wave.open(str(part), 'rb') as wav:
                 offset += wav.getnframes() / wav.getframerate()
+    return summarize(rows)
+
+
+def summarize(rows: list) -> dict:
     # Prefer dense speech and questions. Keep suggestions distinct in time.
     ranked = sorted(rows, key=lambda r: (int("?" in r["text"]), len(r["text"].split()) / max(1, r["end"]-r["start"])), reverse=True)
     moments = []

@@ -10,7 +10,7 @@ if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
   echo "Inštalujem FFmpeg cez Homebrew…"
   brew install ffmpeg
 fi
-if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
+if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
   if ! command -v brew >/dev/null; then
     echo "Nainštaluj Python 3 z https://www.python.org/downloads/macos/ a znova otvor tento súbor."
     exit 1
@@ -33,6 +33,9 @@ fi
 export PATH="$PWD/.venv/bin:$PATH"
 if ! command -v yt-dlp >/dev/null && command -v brew >/dev/null; then
   brew install yt-dlp || echo "Inštalácia yt-dlp zlyhala."
+fi
+if ! command -v whisper-cli >/dev/null && command -v brew >/dev/null; then
+  brew install whisper-cpp || echo "Pre lokálny prepis treba whisper-cpp."
 fi
 if ! command -v deno >/dev/null && command -v brew >/dev/null; then
   brew install deno || echo "Inštalácia Deno pre import z YouTube zlyhala."

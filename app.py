@@ -4,6 +4,7 @@ from threading import RLock
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from local_whisper import analyze_local
 from video_import import download_video, youtube_id
 from datetime import datetime
 import io
@@ -230,6 +231,8 @@ def delete(pid):
             return jsonify(error='Projekt neexistuje.'), 404
         save([p for p in data if p['id'] != pid])
         (UPLOAD / target['source']).unlink(missing_ok=True)
+        for engine in ('local', 'openai'):
+            (UPLOAD / f'{pid}.{engine}.json').unlink(missing_ok=True)
         for clip in target['clips']:
             (EXPORT / clip['file']).unlink(missing_ok=True)
     return jsonify(ok=True)
@@ -239,11 +242,32 @@ def project_analysis(pid):
     project = find(pid)
     if not project:
         return jsonify(error='Projekt neexistuje.'), 404
-    key = request.headers.get('X-OpenAI-Key', '').strip() or credential('openai')
-    if not key or not key.isascii() or not key.isprintable():
-        return jsonify(error='Zadaj OpenAI API kľúč v Nastaveniach.'), 400
+    payload = request.get_json(silent=True)
+    engine = payload.get('engine') if isinstance(payload, dict) else 'openai'
+    if engine not in ('local', 'openai'):
+        return jsonify(error='Vyber spôsob prepisu.'), 400
+    cache = UPLOAD / f'{pid}.{engine}.json'
     try:
-        return jsonify(analyze(UPLOAD / project['source'], key))
+        if cache.is_file():
+            return jsonify(json.loads(cache.read_text(encoding='utf-8')))
+        if engine == 'local':
+            result = analyze_local(UPLOAD / project['source'], project['duration'])
+        else:
+            key = request.headers.get('X-OpenAI-Key', '').strip() or credential('openai')
+            if not key or not key.isascii() or not key.isprintable():
+                return jsonify(error='Zvoľ lokálny prepis alebo zadaj OpenAI API kľúč.'), 400
+            result = analyze(UPLOAD / project['source'], key)
+        with library_lock:
+            if find(pid) is None:
+                return jsonify(error='Projekt bol odstránený.'), 404
+            with NamedTemporaryFile(dir=UPLOAD, mode='w', encoding='utf-8', delete=False) as tmp:
+                temp = Path(tmp.name)
+            try:
+                temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+                temp.replace(cache)
+            finally:
+                temp.unlink(missing_ok=True)
+        return jsonify(result)
     except TranscriptionError as exc:
         return jsonify(error=str(exc)), exc.status
     except (OSError, subprocess.SubprocessError):
