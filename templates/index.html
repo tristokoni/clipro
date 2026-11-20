@@ -265,7 +265,6 @@ function addCorrection(box,rows,id,engine,language){
   details.ontoggle=()=>{
     if(details.open&&!select.options.length){
       select.replaceChildren(...rows.map((r,i)=>new Option(formatTime(r.start)+' · '+r.text.slice(0,48),i)));
-      select.onchange();
     }
   };
   const field=document.createElement('textarea');field.maxLength=500;field.rows=3;field.setAttribute('aria-label','Text titulku');
