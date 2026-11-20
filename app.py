@@ -1,4 +1,7 @@
 import os, json, uuid, subprocess, shutil, re
+import math
+from threading import RLock
+from tempfile import NamedTemporaryFile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from video_import import download_video, youtube_id
@@ -9,7 +12,10 @@ from flask import Response, Flask, request, jsonify, render_template, send_from_
 from werkzeug.utils import secure_filename
 
 ROOT = Path(__file__).resolve().parent
-UPLOAD = ROOT / 'uploads'; EXPORT = ROOT / 'exports'; DB = ROOT / 'projects.json'
+DATA = Path(os.getenv('CLIPRO_DATA_DIR', ROOT)).expanduser().resolve()
+DATA.mkdir(exist_ok=True, parents=True)
+UPLOAD = DATA / 'uploads'; EXPORT = DATA / 'exports'; DB = DATA / 'projects.json'
+library_lock = RLock()
 UPLOAD.mkdir(exist_ok=True); EXPORT.mkdir(exist_ok=True)
 from credentials import activate, credential, settings
 from discovery import discovery, youtube_items, YouTubeError
@@ -29,17 +35,64 @@ def restrict_cross_site_api():
             return jsonify(error='Otvor CLIPRO v lokálnom okne.'), 403
 
 
-def load():
-    try: return json.loads(DB.read_text())
-    except (FileNotFoundError,ValueError): return []
-def save(data): DB.write_text(json.dumps(data,indent=2,ensure_ascii=False))
-def find(pid): return next((p for p in load() if p['id']==pid),None)
-def probe(path):
-    if not shutil.which('ffprobe'): return 0
+class LibraryError(Exception):
+    pass
+
+
+@app.errorhandler(LibraryError)
+def library_error(_error):
+    return jsonify(error='Knižnica projects.json sa nedá načítať alebo uložiť. Skontroluj súbor a voľné miesto.'), 500
+
+
+@app.errorhandler(413)
+def upload_limit(_error):
+    return jsonify(error='Video presahuje limit 2 GB.'), 413
+
+
+def load() -> list:
     try:
-        out = subprocess.run(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(path)],capture_output=True,text=True,timeout=20,check=True)
-        return round(float(out.stdout.strip()),2)
-    except (ValueError,subprocess.SubprocessError): return 0
+        data = json.loads(DB.read_text(encoding='utf-8'))
+        if not isinstance(data, list):
+            raise ValueError('Expected project list')
+        return data
+    except FileNotFoundError:
+        return []
+    except (ValueError, OSError) as exc:
+        raise LibraryError() from exc
+
+
+def save(data: list) -> None:
+    temp = None
+    try:
+        with NamedTemporaryFile(dir=DB.parent, delete=False, mode='w', encoding='utf-8') as handle:
+            temp = Path(handle.name)
+            json.dump(data, handle, ensure_ascii=False)
+        temp.replace(DB)
+    except OSError as exc:
+        raise LibraryError() from exc
+    finally:
+        if temp:
+            temp.unlink(missing_ok=True)
+
+
+def find(pid):
+    return next((p for p in load() if p['id'] == pid), None)
+
+
+def probe(path: Path) -> float:
+    try:
+        out = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'V:0',
+                              '-show_entries', 'stream=codec_type:format=duration',
+                              '-of', 'json', str(path)], capture_output=True, text=True,
+                             timeout=20, check=True)
+        metadata = json.loads(out.stdout)
+        duration = float(metadata['format']['duration'])
+        if metadata['streams'] and math.isfinite(duration) and duration > 0:
+            return round(duration, 3)
+    except (KeyError, ValueError, OSError, subprocess.SubprocessError):
+        pass
+    return 0
+
 
 @app.get('/')
 def index(): return render_template('index.html')
@@ -60,7 +113,14 @@ def register_project(pid, path, name):
         path.unlink(missing_ok=True)
         return jsonify(error='Video sa nepodarilo načítať.'),400
     record={'id':pid,'name':name,'source':path.name,'duration':duration,'date':datetime.now().isoformat(timespec='minutes'),'clips':[]}
-    data=load(); data.insert(0,record); save(data)
+    try:
+        with library_lock:
+            data = load()
+            data.insert(0, record)
+            save(data)
+    except LibraryError:
+        path.unlink(missing_ok=True)
+        raise
     return jsonify(record),201
 @app.post('/api/import')
 def import_video():
@@ -104,16 +164,18 @@ def clip(pid):
     if not p:return jsonify(error='Projekt neexistuje.'),404
     if not shutil.which('ffmpeg'):return jsonify(error='FFmpeg nie je nainštalovaný.'),503
     payload=request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        return jsonify(error='Neplatné nastavenia klipu.'), 400
     try: start=float(payload.get('start',0)); end=float(payload.get('end',30))
     except (ValueError,TypeError):return jsonify(error='Neplatné časové údaje.'),400
-    if start < 0 or end<=start or end-start>180 or (p['duration'] and end>p['duration']+.1):return jsonify(error='Rozsah musí mať 1–180 sekúnd a byť v rámci videa.'),400
+    if not all(map(math.isfinite, (start, end))) or start < 0 or end<=start or end-start>180 or (p['duration'] and end>p['duration']+.1):return jsonify(error='Rozsah musí mať 1–180 sekúnd a byť v rámci videa.'),400
     layout=payload.get('layout','blur')
     if layout not in ('blur','fill','fit'):return jsonify(error='Neplatný layout.'),400
     hook=str(payload.get('hook','')).strip()[:100]
     cid=uuid.uuid4().hex[:10]; output=EXPORT / f'{cid}.mp4'
     ratio = payload.get('ratio', '9:16')
     sizes = {'9:16': '1080:1920', '1:1': '1080:1080', '16:9': '1920:1080'}
-    if ratio not in sizes:
+    if not isinstance(ratio, str) or ratio not in sizes:
         return jsonify(error='Neplatný pomer strán.'), 400
     size = sizes[ratio]
     fill = f'scale={size}:force_original_aspect_ratio=increase,crop={size}'
@@ -132,10 +194,27 @@ def clip(pid):
         cmd.insert(-1, '-an')
     try:
         proc=subprocess.run(cmd,capture_output=True,text=True,timeout=900)
-        if proc.returncode: return jsonify(error='Export zlyhal: '+proc.stderr[-600:]),500
-    except subprocess.TimeoutExpired:return jsonify(error='Export prekročil časový limit.'),504
+        if proc.returncode:
+            output.unlink(missing_ok=True)
+            app.logger.warning('FFmpeg export failed for project %s', pid)
+            return jsonify(error='FFmpeg nedokončil export. Skontroluj vstupné video.'), 422
+    except subprocess.TimeoutExpired:
+        output.unlink(missing_ok=True)
+        return jsonify(error='Export prekročil časový limit.'),504
     entry={'id':cid,'name':f'Clip {len(p["clips"])+1}','start':start,'end':end,'layout':layout,'ratio':ratio,'muted':muted,'hook':hook,'file':output.name,'date':datetime.now().isoformat(timespec='minutes')}
-    data=load(); next(item for item in data if item['id']==pid)['clips'].insert(0,entry);save(data)
+    try:
+        with library_lock:
+            data = load()
+            project = next((row for row in data if row['id'] == pid), None)
+            if project is None:
+                output.unlink(missing_ok=True)
+                return jsonify(error='Projekt bol počas exportu odstránený.'), 404
+            entry['name'] = f'Klip {len(project["clips"]) + 1}'
+            project['clips'].insert(0, entry)
+            save(data)
+    except LibraryError:
+        output.unlink(missing_ok=True)
+        raise
     return jsonify(entry),201
 @app.get('/api/export/<cid>')
 def export(cid):
@@ -144,11 +223,17 @@ def export(cid):
     return send_from_directory(EXPORT,cid+'.mp4',as_attachment=True)
 @app.delete('/api/projects/<pid>')
 def delete(pid):
-    data=load(); target=next((p for p in data if p['id']==pid),None)
-    if not target:return jsonify(error='Projekt neexistuje.'),404
-    (UPLOAD/target['source']).unlink(missing_ok=True)
-    for c in target['clips']:(EXPORT/c['file']).unlink(missing_ok=True)
-    save([p for p in data if p['id']!=pid]);return jsonify(ok=True)
+    with library_lock:
+        data = load()
+        target = next((p for p in data if p['id'] == pid), None)
+        if target is None:
+            return jsonify(error='Projekt neexistuje.'), 404
+        save([p for p in data if p['id'] != pid])
+        (UPLOAD / target['source']).unlink(missing_ok=True)
+        for clip in target['clips']:
+            (EXPORT / clip['file']).unlink(missing_ok=True)
+    return jsonify(ok=True)
+
 @app.post('/api/analysis/<pid>')
 def project_analysis(pid):
     project = find(pid)
