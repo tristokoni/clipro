@@ -18,6 +18,7 @@ DATA = Path(os.getenv('CLIPRO_DATA_DIR', ROOT)).expanduser().resolve()
 DATA.mkdir(exist_ok=True, parents=True)
 UPLOAD = DATA / 'uploads'; EXPORT = DATA / 'exports'; DB = DATA / 'projects.json'
 library_lock = RLock()
+active_analyses = set()
 UPLOAD.mkdir(exist_ok=True); EXPORT.mkdir(exist_ok=True)
 from credentials import activate, credential, settings
 from discovery import discovery, youtube_items, YouTubeError
@@ -26,6 +27,7 @@ from analysis import analyze, transcribe, TranscriptionError
 app = Flask(__name__)
 app.register_blueprint(discovery)
 app.register_blueprint(settings)
+app.config['TRUSTED_HOSTS'] = ['127.0.0.1', 'localhost', '[::1]']
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024 * 1024
 ALLOWED = {'.mp4','.mov','.mkv','.webm','.m4v'}
 
@@ -106,7 +108,13 @@ def upload():
     if not file or not file.filename: return jsonify(error='Vyber video.'),400
     ext=Path(secure_filename(file.filename)).suffix.lower()
     if ext not in ALLOWED: return jsonify(error='Nepodporovaný formát videa.'),400
-    pid=uuid.uuid4().hex[:12]; path=UPLOAD / f'{pid}{ext}'; file.save(path)
+    pid = uuid.uuid4().hex[:12]
+    path = UPLOAD / f'{pid}{ext}'
+    try:
+        file.save(path)
+    except OSError:
+        path.unlink(missing_ok=True)
+        return jsonify(error='Video sa nepodarilo uložiť. Skontroluj voľné miesto.'), 507
     return register_project(pid, path, secure_filename(file.filename))
 
 def register_project(pid, path, name):
@@ -165,7 +173,7 @@ def clip(pid):
     p=find(pid)
     if not p:return jsonify(error='Projekt neexistuje.'),404
     if not shutil.which('ffmpeg'):return jsonify(error='FFmpeg nie je nainštalovaný.'),503
-    payload=request.get_json(silent=True) or {}
+    payload = request.get_json(silent=True) if request.data else {}
     if not isinstance(payload, dict):
         return jsonify(error='Neplatné nastavenia klipu.'), 400
     try: start=float(payload.get('start',0)); end=float(payload.get('end',30))
@@ -246,9 +254,16 @@ def project_analysis(pid):
     if engine not in ('local', 'openai'):
         return jsonify(error='Vyber spôsob prepisu.'), 400
     cache = UPLOAD / f'{pid}.{engine}.json'
-    try:
+    with library_lock:
         if cache.is_file():
-            return jsonify(json.loads(cache.read_text(encoding='utf-8')))
+            try:
+                return jsonify(json.loads(cache.read_text(encoding='utf-8')))
+            except (ValueError, OSError):
+                return jsonify(error='Uložený prepis sa nedá načítať. Skontroluj súbor prepisu v uploads.'), 500
+        if cache in active_analyses:
+            return jsonify(error='Prepis tohto projektu už prebieha.'), 409
+        active_analyses.add(cache)
+    try:
         if engine == 'local':
             result = analyze_local(UPLOAD / project['source'], project['duration'])
         else:
@@ -272,7 +287,10 @@ def project_analysis(pid):
     except (OSError, subprocess.SubprocessError):
         return jsonify(error='Skontroluj dostupnosť FFmpeg a zvukovú stopu videa.'), 422
     except (KeyError, TypeError, ValueError):
-        return jsonify(error='OpenAI vrátilo neplatný prepis.'), 502
+        return jsonify(error='Prepis sa nepodarilo spracovať.'), 502
+    finally:
+        with library_lock:
+            active_analyses.discard(cache)
 
 @app.post('/api/settings/<provider>/test')
 def test_service(provider):

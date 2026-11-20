@@ -76,7 +76,7 @@ function navigate(page){if(page!=='radar')clearTimeout(monitorTimer);if(page==='
 function formatTime(seconds){let n=Math.floor(Number(seconds)||0);return `${Math.floor(n/60)}:${('0'+n%60).slice(-2)}`}
 function projectCard(p){return `<article class="project"><div class="thumb">▶︎</div><div class="projectcontent"><div class="projectname" title="${esc(p.name)}">${esc(p.name)}</div><div class="meta">${formatTime(p.duration)} · ${p.clips.length} klipov · ${p.date.slice(0,10)}</div><div class="projectactions"><button class="btn small primary" onclick="openProject('${p.id}')">✂︎ Otvoriť editor</button><button class="btn small danger" onclick="removeProject('${p.id}')">Zmazať</button></div></div></article>`}
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-async function refresh(){try{let [a,h]=await Promise.all([fetch('/api/projects'),fetch('/api/health')]);projects=await a.json();$('analysisProject').replaceChildren(...projects.map(p=>new Option(p.name,p.id)));const health=await h.json();$('statProjects').textContent=projects.length;$('statClips').textContent=projects.reduce((v,p)=>v+p.clips.length,0);$('statMinutes').textContent=Math.round(projects.reduce((v,p)=>v+p.duration,0)/60);$('statEngine').textContent=health.ffmpeg?'Pripravený':'Nedostupný';let empt='<div class="empty">Zatiaľ žiadne projekty. Nahraj prvé video.</div>';$('recentProjects').innerHTML=projects.slice(0,3).map(projectCard).join('')||empt;$('allProjects').innerHTML=projects.map(projectCard).join('')||empt;if(selected){let p=projects.find(x=>x.id===selected);if(p)renderClips(p);else{selected=null;$('editorEmpty').style.display='block';$('editorWorkspace').style.display='none'}}}catch(e){toast('Nepodarilo sa načítať projekty.',true)}}
+async function refresh(){try{let [a,h]=await Promise.all([fetch('/api/projects'),fetch('/api/health')]);projects=await a.json();let analysisId=$('analysisProject').value;$('analysisProject').replaceChildren(...projects.map(p=>new Option(p.name,p.id)));if(projects.some(p=>p.id===analysisId))$('analysisProject').value=analysisId;const health=await h.json();$('statProjects').textContent=projects.length;$('statClips').textContent=projects.reduce((v,p)=>v+p.clips.length,0);$('statMinutes').textContent=Math.round(projects.reduce((v,p)=>v+p.duration,0)/60);$('statEngine').textContent=health.ffmpeg?'Pripravený':'Nedostupný';let empt='<div class="empty">Zatiaľ žiadne projekty. Nahraj prvé video.</div>';$('recentProjects').innerHTML=projects.slice(0,3).map(projectCard).join('')||empt;$('allProjects').innerHTML=projects.map(projectCard).join('')||empt;if(selected){let p=projects.find(x=>x.id===selected);if(p)renderClips(p);else{selected=null;$('editorEmpty').style.display='block';$('editorWorkspace').style.display='none'}}}catch(e){toast('Nepodarilo sa načítať projekty.',true)}}
 let importing=false;
 async function importVideo(url,button){
   if(importing)return toast('Prebieha sťahovanie videa.');
@@ -126,7 +126,7 @@ async function importVideo(url,button){
 }
 async function upload(file){if(!file)return;if(file.size>2*1024**3)return toast('Video presahuje limit 2 GB.',true);let data=new FormData();data.append('file',file);toast('Nahrávam video...');try{let r=await fetch('/api/upload',{method:'POST',body:data});let p=await r.json();if(!r.ok)throw Error(p.error);await refresh();openProject(p.id);toast('Video bolo nahrané.')}catch(e){toast(e.message||'Nahratie zlyhalo.',true)}$('file').value=''}
 $('file').addEventListener('change',e=>upload(e.target.files[0]));let drop=$('drop');drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over')});drop.addEventListener('dragleave',()=>drop.classList.remove('over'));drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');upload(e.dataTransfer.files[0])});
-function openProject(id){let p=projects.find(x=>x.id===id);if(!p)return;selected=id;stopAt=null;$('editorEmpty').style.display='none';$('editorWorkspace').style.display='grid';$('player').src='/api/video/'+id;$('videoTitle').textContent=p.name;$('editorSubtitle').textContent=p.name;$('start').value=0;$('end').value=Math.min(30,p.duration||30).toFixed(1);renderClips(p);navigate('editor')}
+function openProject(id){$('exportState').textContent='';let p=projects.find(x=>x.id===id);if(!p)return;selected=id;$('analysisProject').value=id;stopAt=null;$('editorEmpty').style.display='none';$('editorWorkspace').style.display='grid';$('player').src='/api/video/'+id;$('videoTitle').textContent=p.name;$('editorSubtitle').textContent=p.name;$('start').value=0;$('end').value=Math.min(30,p.duration||30).toFixed(1);renderClips(p);navigate('editor')}
 function renderClips(p){$('clipCount').textContent=p.clips.length; $('clipList').innerHTML=p.clips.map(c=>`<div class="clipitem"><div><b>${esc(c.name)}</b><small>${formatTime(c.start)} – ${formatTime(c.end)} · ${esc(c.ratio||'9:16')} · ${esc(c.layout)}${c.muted?' · bez zvuku':''}${c.hook?' · '+esc(c.hook):''}</small></div><a class="btn small primary" href="/api/export/${c.id}">↓ MP4</a></div>`).join('')||'<p class="muted" style="font-size:12px">Zatiaľ žiadne klipy.</p>'}
 function setLength(seconds){
   const project=projects.find(p=>p.id===selected);
@@ -206,6 +206,7 @@ $('engine').onchange=()=>{$('engineNote').textContent=$('engine').value==='local
 async function analyzeProject(){
   const id=$('analysisProject').value, box=$('analysisResults');
   if(!id)return toast('Najprv nahraj video.',true);
+  $('analysisProject').disabled=true;$('engine').disabled=true;
   $('analyzeBtn').disabled=true;box.textContent=$('engine').value==='local'?'Pripravujem model a prepisujem reč na tvojom počítači…':'Prepisujem reč cez OpenAI…';
   try{
     const res=await fetch('/api/analysis/'+id,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({engine:$('engine').value})}), data=await res.json();
@@ -218,9 +219,10 @@ async function analyzeProject(){
     if(data.captions.length){
       const stamp=t=>new Date(Math.round(t*1000)).toISOString().slice(11,23).replace('.',',');
       const srt=data.captions.map((r,i)=>[i+1,stamp(r.start)+' --> '+stamp(r.end),r.text,''].join('\n')).join('\n');
-      const link=document.createElement('a');link.download=id+'.srt';link.textContent='Stiahnuť titulky SRT';link.href=URL.createObjectURL(new Blob([srt],{type:'text/plain;charset=utf-8'}));box.append(link);
+      if(window.captionDownload)URL.revokeObjectURL(window.captionDownload);
+      const link=document.createElement('a');link.download=id+'.srt';link.textContent='Stiahnuť titulky SRT';link.href=URL.createObjectURL(new Blob([srt],{type:'text/plain;charset=utf-8'}));window.captionDownload=link.href;box.append(link);
     }
-  }catch(e){box.textContent=e.message}finally{$('analyzeBtn').disabled=false}
+  }catch(e){box.textContent=e.message}finally{$('analyzeBtn').disabled=false;$('analysisProject').disabled=false;$('engine').disabled=false}
 }
 async function testService(provider,button){
   const field=$(provider+'-key'), result=$(provider+'-test');
@@ -251,7 +253,7 @@ async function keySettings(provider,remove=false,remember=false){
                   missing:'Kľúč chýba',unread:'Uložený kľúč môžeš načítať tlačidlom Otestovať a použiť.'};
     for(const [name,state] of Object.entries(data.states))$(name+'-state').textContent=labels[state];
     document.querySelectorAll('.remember').forEach(b=>b.hidden=!data.keychain);
-    $('storageNote').textContent='OpenAI slúži na prepis a YouTube Data API na Trend Radar. Stiahnutie videa z odkazu používa yt-dlp bez API kľúča.';
+    $('storageNote').textContent='Lokálny prepis funguje bez kľúčov. OpenAI API je voliteľné. YouTube Data API používa Trend Radar. Stiahnutie videa z odkazu používa yt-dlp bez API kľúča.';
     if(provider){$(provider+'-key').value='';$(provider+'-test').textContent='';}
   }catch(e){if(provider)$(provider+'-test').textContent=e.message;else $('storageNote').textContent=e.message}
 }

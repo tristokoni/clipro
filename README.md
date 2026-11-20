@@ -1,38 +1,68 @@
-# CLIPRO — video clipping dashboard
+# CLIPRO
 
-Lokálna webová aplikácia na upload videí, výber momentov a export klipov (9:16, 1:1 a 16:9). Skutočný export zabezpečuje FFmpeg, nie demo dáta.
+Lokálne slovenské videoštúdio pre tvorcov krátkych klipov. Otvor video, označ úsek, nastav obraz, ticho a titulky a exportuj MP4. Bezplatný režim používa whisper.cpp na tvojom počítači. Na lokálny prepis ani export nepotrebuješ účet či API kľúč.
 
-Na Macu rozbaľ CLIPRO-Mac.zip a otvor **Spustit CLIPRO.command**. V Nastaveniach môžeš uložiť alebo odstrániť API kľúče pre OpenAI a YouTube. Tlačidlo Použiť pre túto reláciu aktivuje kľúč v pamäti. Na macOS ho môžeš trvalo uložiť do Kľúčenky. Test služby zavolá YouTube Data API alebo odošle dve sekundy ticha do Whisper API podľa cien projektu. Na ostatných systémoch zostanú v pamäti do vypnutia aplikácie.
+## Spustenie na Macu
+
+Stiahni [CLIPRO-Mac.zip](https://github.com/tristokoni/clipro/raw/refs/heads/main/CLIPRO-Mac.zip), rozbaľ ho a otvor **Spustit CLIPRO.command**. Spúšťač používa Python 3.10+, nainštaluje závislosti do projektového prostredia a otvorí lokálnu adresu v prehliadači. Okno Terminálu nechaj otvorené. Na inštaláciu chýbajúcich systémových nástrojov používa [Homebrew](https://brew.sh/).
+
+Pri spustení z GitHubu potrebuješ Git a Homebrew.
+
+```bash
+git clone https://github.com/tristokoni/clipro.git
+cd clipro
+bash "Spustit CLIPRO.command"
+```
+
+Pri aktualizácii existujúceho klonu ukonči bežiace štúdio cez Ctrl+C, spusti `git pull --ff-only` a znova otvor spúšťač. Pri inštalácii z nového ZIPu zachovaj starý priečinok. Ak chceš pracovať s rovnakou knižnicou, nastav `CLIPRO_DATA_DIR` na absolútnu cestu k starému priečinku obsahujúcemu projects.json, uploads a exports. Jednu knižnicu používaj naraz v jednej bežiacej inštancii.
+
+## Prvý klip a titulky
+
+1. V **Prehľade** nahraj video do 2 GB alebo vlož odkaz na ukončené verejné YouTube video. Import z YouTube používa yt-dlp. Dostupnosť videa závisí od YouTube.
+2. V **Editore klipov** označ začiatok a koniec (najviac 180 sekúnd). Vyber pomer strán, spôsob orezania a zvuk. Detail zväčší obraz okolo stredu o 25 %. Striedavý detail sa zapne od druhej do 3,5. sekundy každého šesťsekundového cyklu zdrojového výberu.
+3. **Vystrihnúť ticho** vyhľadá úseky pod −38 dB dlhšie než zvolených 0,8 alebo 1,5 sekundy. Skráti obraz aj zvuk a pri reči ponechá približne 0,1 sekundy na prechod. Funguje aj pri stlmenom exporte, pokiaľ zdroj obsahuje zvuk.
+4. Zapni **Vložiť titulky do MP4**. Vyber farbu, veľkosť a polohu. Pri prvom použití CLIPRO stiahne viacjazyčný model tiny (78 MB) a overí jeho kontrolný súčet. Následný prepis a export fungujú aj bez internetu. Celý zdroj prepíše raz a ďalšie klipy použijú uložené časové značky. Vizuálny štýl sa zapisuje do obrazu MP4.
+5. Vygeneruj klip a stiahni ho cez **MP4**. **Momenty a titulky** ponúkajú aj prepis pôvodného videa vo formáte SRT a návrhy úsekov. SRT používa čas pôvodného videa. Po vystrihnutí páuz sú titulky priamo v exportovanom obraze zosúladené so strihom.
 
 ## Manuálne spustenie
 
-1. Nainštaluj Python 3.10+ a FFmpeg (`brew install ffmpeg` na macOS, `winget install Gyan.FFmpeg` na Windows).
-2. V priečinku projektu spusti:
+Nainštaluj Python 3.10+, FFmpeg s ffprobe a whisper.cpp s príkazom `whisper-cli`. Na Macu:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
-pip install -r requirements.txt
+brew install python ffmpeg whisper.cpp
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 python app.py
 ```
 
-3. Otvor http://127.0.0.1:5050
+Otvor http://127.0.0.1:5050. Voliteľný import z YouTube potrebuje yt-dlp s jeho YouTube komponentmi a podporovaný JavaScript runtime (napríklad Deno). Dvojklikový spúšťač tieto nástroje pripraví. Automatický prepis, SRT a MP4 z vlastného súboru fungujú samostatne.
 
-## Import z YouTube
+## Uloženie a nastavenia
 
-V Prehľade vlož odkaz na konkrétne video alebo Shorts a klikni na **Stiahnuť do editora**. Rovnaké tlačidlo nájdeš pri videách v Trend Radare. Na Macu spúšťač s Pythonom 3.10+ doinštaluje yt-dlp a zodpovedajúce YouTube komponenty do lokálneho prostredia aplikácie. Ak je dostupný Homebrew, doplní chýbajúce Deno. Pri manuálnom spustení musí byť yt-dlp dostupný v PATH. Import podporuje ukončené verejne dostupné videá do 2 GB.
+| Premenná | Použitie |
+| --- | --- |
+| CLIPRO_DATA_DIR | Priečinok knižnice. Predvolene je to priečinok aplikácie. Obsahuje projects.json, zdrojové médiá a exporty. |
+| CLIPRO_WHISPER_MODEL | Voliteľná cesta k existujúcemu viacjazyčnému modelu GGML pre whisper.cpp. Väčší model môže zlepšiť slovenčinu za cenu vyššej náročnosti. Zmena modelu platí pre nové prepisy. |
+| XDG_CACHE_HOME | Priečinok cache. Predvolený model je v ~/.cache/clipro/ggml-tiny.bin. |
+| OPENAI_API_KEY | Len pre výslovne zvolený platený cloudový prepis. |
+| YOUTUBE_API_KEY | Len pre Trend Radar cez YouTube Data API v3. |
 
-## Čo funguje
-- Upload vlastných MP4/MOV/MKV/WEBM/M4V súborov (max 2 GB)
-- Video prehrávač, označenie začiatku/konca, výber 15/30/60 sekúnd, tri pomery strán a tri režimy obrazu
-- Export MP4 so zvukom alebo bez zvuku (H.264) a stiahnutie
-- Lokálna knižnica projektov a klipov, vymazanie
-- Dashboard so skutočnými počtami
+Premenné nastav v Termináli pred spustením. Súbor .env.example uvádza príklady. Aplikácia súbory .env automaticky nenačítava. Kľúče môžeš zadať aj v Nastaveniach do pamäte relácie alebo macOS Kľúčenky. Prepisy sú v uploads vedľa zdroja a pri odstránení projektu sa zmažú spolu s ním.
 
-## Architektúra
+## Riešenie problémov
 
-Flask obsluhuje dashboard a projektové API. FFmpeg číta lokálne médiá a renderuje výstup vo zvolenom pomere strán pre TikTok, Reels a Shorts. Súbory ostávajú v uploads a exports, metadáta v projects.json. Táto verzia je určená pre jedného používateľa.
+- **OpenAI hlási nulový kredit.** V časti Momenty a titulky vyber **Lokálne · zadarmo**. Titulky v editore túto možnosť používajú automaticky.
+- **Prvé použitie potrebuje internet.** Po prerušení sťahovania skús prepis znova alebo zadaj cestu k už stiahnutému modelu cez CLIPRO_WHISPER_MODEL.
+- **Chýba whisper-cli.** Spusti `brew install whisper.cpp` a otvor spúšťač znova. Stav overíš cez `whisper-cli --help`.
+- **Video nemá zvuk alebo celý výber tvorí ticho.** Vypni strih ticha aj automatické titulky alebo vyber časť s rečou.
+- **Video z YouTube sa nedá stiahnuť.** Pri súkromnom videu, živom prenose alebo obmedzení prístupu použi vlastný zdrojový súbor. API kľúč pre Radar sťahovanie neodomkne.
+- **Model vynechal alebo skomolil slová.** Tiny je malý model určený na rýchly lokálny prepis. Presnosť závisí od reči, šumu a jazyka. Pre nové prepisy môžeš použiť väčší model.
 
-V časti Momenty a titulky vyber projekt a spusti analýzu. FFmpeg pripraví zvuk a aplikácia ho odošle na prepis modelu whisper-1. Obrazovka momentov ponúkne SRT pre celé zdrojové video a úseky vybrané podľa hustoty reči a otázok.
+## Kontroly
 
-Modul discovery.py používa YouTube Data API v3. Kľúč zadaj v Nastaveniach. Radar zobrazuje slovenský rebríček mostPopular. Po zadaní ID kanála kontroluje otvorená stránka živé vysielanie každých päť minút.
+```bash
+python -m unittest discover -s tests -v
+```
+
+Testy pracujú v dočasných priečinkoch. Kontrola exportu používa systémové FFmpeg a ffprobe. Platené služby ani kľúče nepotrebuješ.

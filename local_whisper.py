@@ -55,7 +55,7 @@ def model_file() -> Path:
 def analyze_local(source: Path, duration: float) -> dict:
     cli = shutil.which("whisper-cli")
     if not cli:
-        raise TranscriptionError("Chýba whisper-cli. Na Macu otvor Spustit CLIPRO.command alebo použi brew install whisper-cpp.", 503)
+        raise TranscriptionError("Chýba whisper-cli. Na Macu otvor Spustit CLIPRO.command alebo použi brew install whisper.cpp.", 503)
     if not model_lock.acquire(blocking=False):
         raise TranscriptionError("Na tomto počítači už beží lokálny prepis.", 409)
     try:

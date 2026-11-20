@@ -12,13 +12,15 @@ if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
 fi
 if ! python3 -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
   if ! command -v brew >/dev/null; then
-    echo "Nainštaluj Python 3 z https://www.python.org/downloads/macos/ a znova otvor tento súbor."
+    echo "Nainštaluj Python 3.10 alebo novší z https://www.python.org/downloads/macos/ a znova otvor tento súbor."
     exit 1
   fi
   brew install python
   hash -r
 fi
-if [ ! -x .venv/bin/python ]; then
+if [ -x .venv/bin/python ] && ! .venv/bin/python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+  python3 -m venv --upgrade .venv
+elif [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
 fi
 .venv/bin/python -m pip --disable-pip-version-check install -q -r requirements.txt
@@ -33,7 +35,7 @@ if ! command -v yt-dlp >/dev/null && command -v brew >/dev/null; then
   brew install yt-dlp || echo "Inštalácia yt-dlp zlyhala."
 fi
 if ! command -v whisper-cli >/dev/null && command -v brew >/dev/null; then
-  brew install whisper-cpp || echo "Pre lokálny prepis treba whisper-cpp."
+  brew install whisper.cpp || echo "Pre lokálny prepis treba whisper.cpp."
 fi
 if ! command -v deno >/dev/null && command -v brew >/dev/null; then
   brew install deno || echo "Inštalácia Deno pre import z YouTube zlyhala."
