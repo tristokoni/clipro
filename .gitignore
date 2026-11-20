@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+projects.json
+uploads/*
+exports/*
+!uploads/.gitkeep
+!exports/.gitkeep
