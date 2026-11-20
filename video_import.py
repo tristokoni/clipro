@@ -1,4 +1,9 @@
+import json
+import os
 import re
+import selectors
+import signal
+import time
 import shutil
 import subprocess
 from urllib.parse import parse_qs, urlsplit
@@ -34,19 +39,59 @@ def download_video(video_id, directory):
     cmd = [
         executable, '--ignore-config', '--no-playlist', '--no-simulate',
         '--match-filter', '!is_live & !is_upcoming', '--max-filesize', '2G',
-        '--socket-timeout', '20', '--retries', '2', '--no-progress',
+        '--socket-timeout', '15', '--retries', '2', '--newline', '--progress',
+        '--progress-delta', '1', '--color', 'never',
+        '--progress-template', 'download:PROGRESS %(progress.downloaded_bytes)s %(progress._percent_str)s',
+        '--progress-template', 'postprocess:PROCESSING',
         '-f', 'bv[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/b[ext=mp4]/bv+ba/b',
         '--merge-output-format', 'mp4', '--remux-video', 'mp4',
-        '-o', str(directory / 'source.%(ext)s'), '--print', 'after_move:title',
+        '-o', str(directory / 'source.%(ext)s'), '--print', 'after_move:TITLE %(title)j',
         'https://www.youtube.com/watch?v=' + video_id,
     ]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=1800)
-    except subprocess.TimeoutExpired:
-        raise ValueError('Sťahovanie prekročilo časový limit 30 minút.') from None
-    if result.returncode:
-        raise ValueError('YouTube video nesprístupnil. Skontroluj odkaz, pripojenie a aktualizáciu yt-dlp.')
+    title = video_id
+    last_error = ''
+    started = last_activity = time.monotonic()
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          start_new_session=True) as proc, selectors.DefaultSelector() as poll:
+        try:
+            poll.register(proc.stdout, selectors.EVENT_READ)
+            pending = b''
+            while True:
+                now = time.monotonic()
+                if now - last_activity > 120 or now - started > 1800:
+                    raise ValueError('Sťahovanie prekročilo časový limit. Skontroluj pripojenie a skús to znova.')
+                if not poll.select(2):
+                    yield {'type': 'heartbeat'}
+                    continue
+                chunk = os.read(proc.stdout.fileno(), 65536)
+                if not chunk:
+                    break
+                last_activity = now
+                pending += chunk
+                lines = pending.split(b'\n')
+                pending = lines.pop()
+                for raw in lines:
+                    line = raw.decode('utf-8', 'replace').strip()
+                    if line.startswith('PROGRESS '):
+                        fields = line.split()
+                        if len(fields) >= 3:
+                            size = int(fields[1]) if fields[1].isdigit() else 0
+                            yield {'message': f'Sťahujem stopu · {size / 1048576:.1f} MB · {fields[2]}'}
+                    elif line.startswith('PROCESSING'):
+                        yield {'message': 'Spracúvam stiahnuté video…'}
+                    elif line.startswith('TITLE '):
+                        title = json.loads(line[6:])
+                    elif line.startswith('ERROR:'):
+                        last_error = re.sub(r'https?://\S+', '[odkaz]', line[6:]).strip()[:360]
+            if proc.wait():
+                raise ValueError('Sťahovanie zlyhalo. ' + (last_error or 'Skontroluj pripojenie a dostupnosť videa.'))
+        finally:
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
     path = directory / 'source.mp4'
     if not path.is_file() or path.stat().st_size > 2 * 1024**3:
         raise ValueError('Vyber ukončené video s veľkosťou do 2 GB.')
-    return path, result.stdout.strip()[:200] or video_id
+    return path, title[:200]

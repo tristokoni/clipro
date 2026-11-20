@@ -3,7 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from video_import import download_video, youtube_id
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Response, Flask, request, jsonify, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 
 ROOT = Path(__file__).resolve().parent
@@ -67,16 +67,29 @@ def import_video():
     if not video_id:
         return jsonify(error='Vlož odkaz na konkrétne YouTube video alebo Shorts.'), 400
     pid = uuid.uuid4().hex[:12]
-    try:
-        with TemporaryDirectory(dir=UPLOAD) as temp:
-            source, title = download_video(video_id, Path(temp))
-            path = UPLOAD / f'{pid}.mp4'
-            source.replace(path)
-        return register_project(pid, path, title)
-    except ValueError as exc:
-        return jsonify(error=str(exc)), 422
-    except OSError:
-        return jsonify(error='Video sa nepodarilo uložiť. Skontroluj voľné miesto.'), 500
+    def events():
+        yield {'message': 'Pripájam sa k YouTube a načítavam informácie o videu…'}
+        try:
+            with TemporaryDirectory(dir=UPLOAD) as temp:
+                source, title = yield from download_video(video_id, Path(temp))
+                yield {'message': 'Pripravujem projekt pre editor…'}
+                path = UPLOAD / f'{pid}.mp4'
+                source.replace(path)
+            response, status = register_project(pid, path, title)
+            yield {'status': status, 'result': response.get_json()}
+        except ValueError as exc:
+            yield {'status': 422, 'result': {'error': str(exc)}}
+        except OSError:
+            yield {'status': 500, 'result': {'error': 'Video sa nepodarilo uložiť. Skontroluj voľné miesto.'}}
+
+    if request.accept_mimetypes.best == 'application/x-ndjson':
+        from flask import stream_with_context
+        stream = (json.dumps(event) + '\n' for event in events())
+        return Response(stream_with_context(stream), mimetype='application/x-ndjson',
+                        headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
+    for event in events():
+        if 'result' in event:
+            return jsonify(event['result']), event['status']
 
 @app.get('/api/video/<pid>')
 def video(pid):
