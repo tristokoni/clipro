@@ -1,8 +1,10 @@
 # CLIPRO — video clipping dashboard
 
-Lokálna webová aplikácia na upload videí, výber momentov a export vertikálnych klipov (1080×1920). Skutočný export zabezpečuje FFmpeg, nie demo dáta.
+Lokálna webová aplikácia na upload videí, výber momentov a export klipov (9:16, 1:1 a 16:9). Skutočný export zabezpečuje FFmpeg, nie demo dáta.
 
-## Spustenie (macOS / Windows / Linux)
+Na Macu rozbaľ CLIPRO-Mac.zip a otvor **Spustit CLIPRO.command**. V Nastaveniach môžeš uložiť alebo odstrániť API kľúče pre OpenAI a YouTube. Na macOS sa ukladajú do Kľúčenky. Na ostatných systémoch zostanú v pamäti do vypnutia aplikácie.
+
+## Manuálne spustenie
 
 1. Nainštaluj Python 3.10+ a FFmpeg (`brew install ffmpeg` na macOS, `winget install Gyan.FFmpeg` na Windows).
 2. V priečinku projektu spusti:
@@ -18,15 +20,15 @@ python app.py
 
 ## Čo funguje
 - Upload vlastných MP4/MOV/MKV/WEBM/M4V súborov (max 2 GB)
-- Video prehrávač, označenie začiatku/konca, 3 vertikálne rozloženia
-- Serverový export MP4 (H.264/AAC) a stiahnutie
+- Video prehrávač, označenie začiatku/konca, výber 15/30/60 sekúnd, tri pomery strán a tri režimy obrazu
+- Export MP4 so zvukom alebo bez zvuku (H.264) a stiahnutie
 - Lokálna knižnica projektov a klipov, vymazanie
 - Dashboard so skutočnými počtami
 
 ## Architektúra
 
-Flask obsluhuje dashboard a projektové API. FFmpeg číta lokálne médiá a renderuje spoločný výstup 9:16 pre TikTok, Reels a Shorts. Súbory ostávajú v uploads a exports, metadáta v projects.json. Táto verzia je určená pre jedného používateľa.
+Flask obsluhuje dashboard a projektové API. FFmpeg číta lokálne médiá a renderuje výstup vo zvolenom pomere strán pre TikTok, Reels a Shorts. Súbory ostávajú v uploads a exports, metadáta v projects.json. Táto verzia je určená pre jedného používateľa.
 
-V časti Momenty a titulky vyber projekt a zadaj OpenAI API kľúč. FFmpeg pripraví zvuk a aplikácia ho odošle na prepis modelu whisper-1. Kľúč sa neukladá. Obrazovka momentov ponúkne SRT pre celé zdrojové video a úseky vybrané podľa hustoty reči a otázok.
+V časti Momenty a titulky vyber projekt a spusti analýzu. FFmpeg pripraví zvuk a aplikácia ho odošle na prepis modelu whisper-1. Obrazovka momentov ponúkne SRT pre celé zdrojové video a úseky vybrané podľa hustoty reči a otázok.
 
-Modul discovery.py používa YouTube Data API v3. Nastav na serveri premennú YOUTUBE_API_KEY. Radar zobrazuje slovenský rebríček mostPopular. Po zadaní ID kanála kontroluje otvorená stránka živé vysielanie každých päť minút.
+Modul discovery.py používa YouTube Data API v3. Kľúč zadaj v Nastaveniach. Radar zobrazuje slovenský rebríček mostPopular. Po zadaní ID kanála kontroluje otvorená stránka živé vysielanie každých päť minút.

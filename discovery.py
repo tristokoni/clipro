@@ -1,5 +1,5 @@
 import json
-import os
+from credentials import credential
 import re
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -9,9 +9,9 @@ discovery = Blueprint("discovery", __name__)
 
 @discovery.get("/api/discovery")
 def discover():
-    key = os.getenv("YOUTUBE_API_KEY")
+    key = credential("youtube")
     if not key:
-        return jsonify(error="Nastav YOUTUBE_API_KEY na serveri."), 503
+        return jsonify(error="Zadaj YouTube API kľúč v Nastaveniach."), 503
     channel = request.args.get("channel", "").strip()
     params = dict(key=key, part="snippet", maxResults=10)
     if channel:

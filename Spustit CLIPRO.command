@@ -21,7 +21,7 @@ fi
 if [ ! -x .venv/bin/python ]; then
   python3 -m venv .venv
 fi
-if ! .venv/bin/python -c 'import flask, requests' 2>/dev/null; then
+if ! .venv/bin/python -c 'import flask, requests, keyring' 2>/dev/null; then
   .venv/bin/python -m pip install -r requirements.txt
 fi
 exec .venv/bin/python launch_mac.py
