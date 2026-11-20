@@ -5,6 +5,7 @@ from tempfile import NamedTemporaryFile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from rendering import edit_options, render, SIZES
+from moments import pick_moments
 from local_whisper import analyze_local
 from video_import import download_video, youtube_id
 from datetime import datetime
@@ -194,7 +195,10 @@ def clip(pid):
             engine = payload.get('captionEngine', 'local')
             if engine not in ('local', 'openai'):
                 raise ValueError('Neplatný zdroj titulkov.')
-            cache = UPLOAD / f'{pid}.{engine}.json'
+            language = payload.get('language', 'sk')
+            if language not in ('sk', 'auto'):
+                raise ValueError('Neplatný jazyk prepisu.')
+            cache = transcript_file(pid, engine, language)
             if not cache.is_file():
                 raise ValueError('Najprv vytvor prepis v časti Momenty a titulky.')
             rows = json.loads(cache.read_text(encoding='utf-8'))['captions']
@@ -240,9 +244,19 @@ def delete(pid):
         (UPLOAD / target['source']).unlink(missing_ok=True)
         for engine in ('local', 'openai'):
             (UPLOAD / f'{pid}.{engine}.json').unlink(missing_ok=True)
+            for language in ('sk', 'auto'):
+                transcript_file(pid, engine, language).unlink(missing_ok=True)
         for clip in target['clips']:
             (EXPORT / clip['file']).unlink(missing_ok=True)
     return jsonify(ok=True)
+
+def transcript_file(pid, engine, language):
+    return UPLOAD / f'{pid}.{engine}.{language}.v2.json'
+
+
+def transcript_response(result, length):
+    return jsonify(captions=result['captions'], moments=pick_moments(result['captions'], length))
+
 
 @app.post('/api/analysis/<pid>')
 def project_analysis(pid):
@@ -253,11 +267,16 @@ def project_analysis(pid):
     engine = payload.get('engine') if isinstance(payload, dict) else 'openai'
     if engine not in ('local', 'openai'):
         return jsonify(error='Vyber spôsob prepisu.'), 400
-    cache = UPLOAD / f'{pid}.{engine}.json'
+    options = payload if isinstance(payload, dict) else {}
+    language = options.get('language', 'sk')
+    length = options.get('momentLength', 30)
+    if language not in ('sk', 'auto') or length not in (15, 30, 60):
+        return jsonify(error='Vyber podporovaný jazyk a dĺžku momentu.'), 400
+    cache = transcript_file(pid, engine, language)
     with library_lock:
         if cache.is_file():
             try:
-                return jsonify(json.loads(cache.read_text(encoding='utf-8')))
+                return transcript_response(json.loads(cache.read_text(encoding='utf-8')), length)
             except (ValueError, OSError):
                 return jsonify(error='Uložený prepis sa nedá načítať. Skontroluj súbor prepisu v uploads.'), 500
         if cache in active_analyses:
@@ -265,12 +284,12 @@ def project_analysis(pid):
         active_analyses.add(cache)
     try:
         if engine == 'local':
-            result = analyze_local(UPLOAD / project['source'], project['duration'])
+            result = analyze_local(UPLOAD / project['source'], project['duration'], language)
         else:
             key = request.headers.get('X-OpenAI-Key', '').strip() or credential('openai')
             if not key or not key.isascii() or not key.isprintable():
                 return jsonify(error='Zvoľ lokálny prepis alebo zadaj OpenAI API kľúč.'), 400
-            result = analyze(UPLOAD / project['source'], key)
+            result = analyze(UPLOAD / project['source'], key, language)
         with library_lock:
             if find(pid) is None:
                 return jsonify(error='Projekt bol odstránený.'), 404
@@ -281,7 +300,7 @@ def project_analysis(pid):
                 temp.replace(cache)
             finally:
                 temp.unlink(missing_ok=True)
-        return jsonify(result)
+        return transcript_response(result, length)
     except TranscriptionError as exc:
         return jsonify(error=str(exc)), exc.status
     except (OSError, subprocess.SubprocessError):

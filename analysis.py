@@ -5,6 +5,8 @@ from pathlib import Path
 
 import requests
 
+from moments import pick_moments
+
 
 class TranscriptionError(Exception):
     def __init__(self, message, status):
@@ -12,14 +14,15 @@ class TranscriptionError(Exception):
         self.status = status
 
 
-def transcribe(audio, filename, api_key, read_timeout=300):
+def transcribe(audio, filename, api_key, read_timeout=300, language="sk"):
     try:
         response = requests.post(
             'https://api.openai.com/v1/audio/transcriptions',
             headers={'Authorization': 'Bearer ' + api_key},
             files={'file': (filename, audio, 'audio/wav')},
             data={'model': 'whisper-1', 'response_format': 'verbose_json',
-                  'timestamp_granularities[]': 'segment'},
+                  'timestamp_granularities[]': 'segment',
+                  **({'language': language} if language != 'auto' else {})},
             timeout=(10, read_timeout), allow_redirects=False)
     except requests.RequestException:
         raise TranscriptionError('Spojenie s OpenAI zlyhalo. Skús to znova.', 502) from None
@@ -33,7 +36,7 @@ def transcribe(audio, filename, api_key, read_timeout=300):
     return response.json()["segments"]
 
 
-def analyze(path, api_key):
+def analyze(path, api_key, language="sk"):
     rows = []
     with tempfile.TemporaryDirectory() as directory:
         # Fixed-rate PCM makes each ten-minute part smaller than 20 MB.
@@ -46,7 +49,7 @@ def analyze(path, api_key):
         offset = 0.0
         for part in sorted(Path(directory).glob('*.wav')):
             with part.open('rb') as audio:
-                segments = transcribe(audio, part.name, api_key)
+                segments = transcribe(audio, part.name, api_key, language=language)
             for segment in segments:
                 text = segment['text'].strip()
                 if text:
@@ -58,12 +61,4 @@ def analyze(path, api_key):
 
 
 def summarize(rows: list) -> dict:
-    # Prefer dense speech and questions. Keep suggestions distinct in time.
-    ranked = sorted(rows, key=lambda r: (int("?" in r["text"]), len(r["text"].split()) / max(1, r["end"]-r["start"])), reverse=True)
-    moments = []
-    for row in ranked:
-        if all(abs(row["start"] - other["start"]) >= 25 for other in moments):
-            moments.append(row)
-        if len(moments) == 5:
-            break
-    return dict(captions=rows, moments=moments)
+    return dict(captions=rows, moments=pick_moments(rows))

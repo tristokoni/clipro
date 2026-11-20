@@ -1,4 +1,4 @@
-"""Offline inference with whisper.cpp. The first run fetches the multilingual tiny model."""
+"""Offline inference with whisper.cpp. The first run fetches the multilingual small model."""
 import hashlib
 import json
 import os
@@ -10,12 +10,13 @@ from threading import Lock
 
 import requests
 
+from moments import cue_groups
 from analysis import TranscriptionError, summarize
 
 MODEL_URL = ("https://huggingface.co/ggerganov/whisper.cpp/resolve/"
-             "5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.bin?download=true")
-MODEL_SHA256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
-MODEL_SIZE = 77691713
+             "5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin?download=true")
+MODEL_SHA256 = "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb"
+MODEL_SIZE = 190085487
 model_lock = Lock()
 
 
@@ -27,7 +28,7 @@ def model_file() -> Path:
             raise TranscriptionError("Skontroluj cestu CLIPRO_WHISPER_MODEL.", 503)
         return path
     cache = Path(os.getenv("XDG_CACHE_HOME", Path.home() / ".cache")) / "clipro"
-    path = cache / "ggml-tiny.bin"
+    path = cache / "ggml-small-q5_1.bin"
     if path.is_file() and path.stat().st_size == MODEL_SIZE:
         return path
     cache.mkdir(parents=True, exist_ok=True)
@@ -52,7 +53,7 @@ def model_file() -> Path:
     return path
 
 
-def analyze_local(source: Path, duration: float) -> dict:
+def analyze_local(source: Path, duration: float, language: str = "sk") -> dict:
     cli = shutil.which("whisper-cli")
     if not cli:
         raise TranscriptionError("Chýba whisper-cli. Na Macu otvor Spustit CLIPRO.command alebo použi brew install whisper.cpp.", 503)
@@ -67,8 +68,8 @@ def analyze_local(source: Path, duration: float) -> dict:
                                 "-i", str(source), "-t", "600", "-map", "0:a:0", "-ar", "16000",
                                 "-ac", "1", "-c:a", "pcm_s16le", "audio.wav"], cwd=temp,
                                check=True, capture_output=True, timeout=180)
-                subprocess.run([cli, "-m", str(model.resolve()), "-f", "audio.wav", "-l", "auto",
-                                "-oj", "-of", "result", "-ml", "62", "-sow"], cwd=temp,
+                subprocess.run([cli, "-m", str(model.resolve()), "-f", "audio.wav", "-l", language,
+                                "-oj", "-of", "result", "-ml", "1", "-sow"], cwd=temp,
                                check=True, capture_output=True, timeout=1800)
                 result = json.loads((Path(temp) / "result.json").read_text(encoding="utf-8"))
                 for segment in result["transcription"]:
@@ -77,7 +78,7 @@ def analyze_local(source: Path, duration: float) -> dict:
                     end = min(duration, offset + segment["offsets"]["to"] / 1000)
                     if text and end > start:
                         rows.append(dict(start=start, end=end, text=text))
-        return summarize(rows)
+        return summarize(cue_groups(rows))
     except subprocess.TimeoutExpired:
         raise TranscriptionError("Lokálny prepis prekročil časový limit.", 504) from None
     except subprocess.CalledProcessError:

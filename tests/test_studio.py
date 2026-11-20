@@ -49,7 +49,7 @@ class StudioTests(unittest.TestCase):
                 response = self.client.post('/api/analysis/abc', json={'engine':'local'})
                 self.assertEqual(response.json, result)
             analyze.assert_called_once()
-        self.assertTrue((self.upload/'abc.local.json').exists())
+        self.assertTrue((self.upload/'abc.local.sk.v2.json').exists())
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')
     def test_trimmed_video_and_styled_captions(self):
@@ -62,7 +62,7 @@ class StudioTests(unittest.TestCase):
         with source.open('rb') as video:
             project = self.client.post('/api/upload', data={'file': (video, 'skuska.mp4')}).json
         pid = project['id']
-        (self.upload/f'{pid}.local.json').write_text(json.dumps(
+        (self.upload/f'{pid}.local.sk.v2.json').write_text(json.dumps(
             {'captions':[dict(start=3,end=4,text='Ľahký strih')]}))
         r = self.client.post('/api/clip/'+pid, json=dict(start=0,end=4,silence='0.8',
                              zoom='punch',captions=True,color='yellow',position='top',ratio='16:9'))
