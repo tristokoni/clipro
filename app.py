@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent
 UPLOAD = ROOT / 'uploads'; EXPORT = ROOT / 'exports'; DB = ROOT / 'projects.json'
 UPLOAD.mkdir(exist_ok=True); EXPORT.mkdir(exist_ok=True)
 from discovery import discovery
-from analysis import analyze
+from analysis import analyze, TranscriptionError
 
 app = Flask(__name__)
 app.register_blueprint(discovery)
@@ -92,12 +92,17 @@ def project_analysis(pid):
     project = find(pid)
     if not project:
         return jsonify(error='Projekt neexistuje.'), 404
+    key = request.headers.get('X-OpenAI-Key', '').strip()
+    if not key or not key.isascii() or not key.isprintable():
+        return jsonify(error='Zadaj platný OpenAI API kľúč.'), 400
     try:
-        return jsonify(analyze(UPLOAD / project['source']))
-    except ImportError:
-        return jsonify(error='Na analýzu nainštaluj faster-whisper.'), 503
-    except (OSError, RuntimeError, ValueError):
-        return jsonify(error='Skontroluj dostupnosť modelu Whisper a zvukovú stopu.'), 503
+        return jsonify(analyze(UPLOAD / project['source'], key))
+    except TranscriptionError as exc:
+        return jsonify(error=str(exc)), exc.status
+    except (OSError, subprocess.SubprocessError):
+        return jsonify(error='Skontroluj dostupnosť FFmpeg a zvukovú stopu videa.'), 422
+    except (KeyError, TypeError, ValueError):
+        return jsonify(error='OpenAI vrátilo neplatný prepis.'), 502
 
 @app.get('/api/health')
 def health():return jsonify(ffmpeg=bool(shutil.which('ffmpeg')),projects=len(load()))
