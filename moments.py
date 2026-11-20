@@ -54,6 +54,9 @@ def pick_moments(rows: list, target: int = 30) -> list:
             reason = "Otázka na úvod" if question else "Ukončená veta" if complete else "Súvislá reč"
             candidates.append((score, dict(start=start, end=rows[j]["end"], text=text, reason=reason)))
 
+    substantial = [item for item in candidates if item[1]["end"] - item[1]["start"] >= target*.50]
+    if substantial:
+        candidates = substantial
     selected = []
     span = rows[-1]["end"] - rows[0]["start"] if rows else 0
     while candidates and len(selected) < 5:

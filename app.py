@@ -19,7 +19,7 @@ DATA = Path(os.getenv('CLIPRO_DATA_DIR', ROOT)).expanduser().resolve()
 DATA.mkdir(exist_ok=True, parents=True)
 UPLOAD = DATA / 'uploads'; EXPORT = DATA / 'exports'; DB = DATA / 'projects.json'
 library_lock = RLock()
-active_analyses = set()
+active_analyses = {}
 UPLOAD.mkdir(exist_ok=True); EXPORT.mkdir(exist_ok=True)
 from credentials import activate, credential, settings
 from discovery import discovery, youtube_items, YouTubeError
@@ -254,8 +254,60 @@ def transcript_file(pid, engine, language):
     return UPLOAD / f'{pid}.{engine}.{language}.v2.json'
 
 
+def write_transcript(cache, result):
+    with NamedTemporaryFile(dir=UPLOAD, mode='w', encoding='utf-8', delete=False) as tmp:
+        temp = Path(tmp.name)
+    try:
+        temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
+        temp.replace(cache)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+@app.patch('/api/analysis/<pid>/caption')
+def correct_caption(pid):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or not find(pid):
+        return jsonify(error='Projekt alebo údaje opravy chýbajú.'), 400
+    engine, language = payload.get('engine'), payload.get('language')
+    index, text = payload.get('index'), payload.get('text')
+    if (engine not in ('local', 'openai') or language not in ('sk', 'auto')
+            or type(index) is not int or not isinstance(text, str) or not 0 < len(text.strip()) <= 500):
+        return jsonify(error='Zadaj text titulku (1 až 500 znakov).'), 400
+    cache = transcript_file(pid, engine, language)
+    with library_lock:
+        if not cache.is_file():
+            return jsonify(error='Prepis sa nenašiel.'), 404
+        result = json.loads(cache.read_text(encoding='utf-8'))
+        rows = result['captions']
+        if not 0 <= index < len(rows) or rows[index]['text'] != payload.get('original'):
+            return jsonify(error='Titulok sa zmenil. Načítaj prepis znova.'), 409
+        row = rows[index]
+        row['text'] = ' '.join(text.split())
+        words = row.get('words', [])
+        if len(words) == len(row['text'].split()):
+            for w, label in zip(words, row['text'].split()):
+                w['text'] = label
+        else:
+            row.pop('words', None)
+        result.pop('moments', None)
+        write_transcript(cache, result)
+    return jsonify(ok=True)
+
+
 def transcript_response(result, length):
     return jsonify(captions=result['captions'], moments=pick_moments(result['captions'], length))
+
+
+@app.get('/api/analysis/<pid>/progress')
+def analysis_progress(pid):
+    language = request.args.get('language', 'sk')
+    if language not in ('sk', 'auto') or not re.fullmatch(r'[a-f0-9]{12}', pid):
+        return jsonify(error='Neplatná požiadavka.'), 400
+    cache = transcript_file(pid, 'local', language)
+    with library_lock:
+        progress = active_analyses.get(cache)
+    return jsonify(progress=progress), 200, {'Cache-Control': 'no-store'}
 
 
 @app.post('/api/analysis/<pid>')
@@ -281,10 +333,13 @@ def project_analysis(pid):
                 return jsonify(error='Uložený prepis sa nedá načítať. Skontroluj súbor prepisu v uploads.'), 500
         if cache in active_analyses:
             return jsonify(error='Prepis tohto projektu už prebieha.'), 409
-        active_analyses.add(cache)
+        active_analyses[cache] = None
     try:
         if engine == 'local':
-            result = analyze_local(UPLOAD / project['source'], project['duration'], language)
+            def progress(part, total):
+                with library_lock:
+                    active_analyses[cache] = dict(part=part, total=total)
+            result = analyze_local(UPLOAD / project['source'], project['duration'], language, progress)
         else:
             key = request.headers.get('X-OpenAI-Key', '').strip() or credential('openai')
             if not key or not key.isascii() or not key.isprintable():
@@ -293,13 +348,7 @@ def project_analysis(pid):
         with library_lock:
             if find(pid) is None:
                 return jsonify(error='Projekt bol odstránený.'), 404
-            with NamedTemporaryFile(dir=UPLOAD, mode='w', encoding='utf-8', delete=False) as tmp:
-                temp = Path(tmp.name)
-            try:
-                temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
-                temp.replace(cache)
-            finally:
-                temp.unlink(missing_ok=True)
+            write_transcript(cache, result)
         return transcript_response(result, length)
     except TranscriptionError as exc:
         return jsonify(error=str(exc)), exc.status
@@ -309,7 +358,7 @@ def project_analysis(pid):
         return jsonify(error='Prepis sa nepodarilo spracovať.'), 502
     finally:
         with library_lock:
-            active_analyses.discard(cache)
+            active_analyses.pop(cache, None)
 
 @app.post('/api/settings/<provider>/test')
 def test_service(provider):

@@ -1,6 +1,7 @@
 """Offline inference with whisper.cpp. The first run fetches the multilingual small model."""
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import shutil
@@ -53,7 +54,7 @@ def model_file() -> Path:
     return path
 
 
-def analyze_local(source: Path, duration: float, language: str = "sk") -> dict:
+def analyze_local(source: Path, duration: float, language: str = "sk", progress=None) -> dict:
     cli = shutil.which("whisper-cli")
     if not cli:
         raise TranscriptionError("Chýba whisper-cli. Na Macu otvor Spustit CLIPRO.command alebo použi brew install whisper.cpp.", 503)
@@ -63,7 +64,11 @@ def analyze_local(source: Path, duration: float, language: str = "sk") -> dict:
         model = model_file()
         rows = []
         with TemporaryDirectory() as temp:
-            for offset in range(0, max(1, int(duration + .999)), 600):
+            total = max(1, math.ceil(duration / 600))
+            for part in range(total):
+                offset = part * 600
+                if progress:
+                    progress(part + 1, total)
                 subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-y", "-ss", str(offset),
                                 "-i", str(source), "-t", "600", "-map", "0:a:0", "-ar", "16000",
                                 "-ac", "1", "-c:a", "pcm_s16le", "audio.wav"], cwd=temp,

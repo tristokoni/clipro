@@ -17,7 +17,8 @@ def choice(payload: dict, name: str, default: str, options) -> str:
 
 
 def edit_options(payload: dict) -> dict:
-    return dict(zoom=choice(payload, "zoom", "none", ("none", "close", "punch")),
+    return dict(motion=choice(payload, "motion", "classic", ("classic", "pop", "karaoke")),
+                zoom=choice(payload, "zoom", "none", ("none", "close", "punch")),
                 silence=choice(payload, "silence", "off", ("off", "0.8", "1.5")),
                 captions=payload.get("captions") is True,
                 color=choice(payload, "color", "white", COLORS),

@@ -42,6 +42,7 @@ class StudioTests(unittest.TestCase):
 
     def test_local_route_uses_no_credentials_and_caches(self):
         studio.save([dict(id='abc', source='a.mp4', duration=2, clips=[])])
+        (self.upload/'abc.local.json').write_text('legacy auto transcript')
         result = dict(captions=[], moments=[])
         with patch.object(studio, 'credential', side_effect=AssertionError), patch.object(
                 studio, 'analyze_local', return_value=result) as analyze:
@@ -49,6 +50,7 @@ class StudioTests(unittest.TestCase):
                 response = self.client.post('/api/analysis/abc', json={'engine':'local'})
                 self.assertEqual(response.json, result)
             analyze.assert_called_once()
+            self.assertEqual(analyze.call_args.args[:3],(self.upload/'a.mp4', 2, 'sk'))
         self.assertTrue((self.upload/'abc.local.sk.v2.json').exists())
 
     @unittest.skipUnless(shutil.which('ffmpeg') and shutil.which('ffprobe'), 'FFmpeg required')

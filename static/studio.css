@@ -69,3 +69,16 @@ h2 {font-weight:650}
 .check input {accent-color:var(--accent);width:17px;height:17px}
 .caption-sample {display:flex;justify-content:center;align-items:flex-end;height:100px;padding:9px;margin-bottom:12px;border-radius:10px;background:linear-gradient(140deg,#706084,#3b3247);color:white;font-weight:700;font-size:19px;text-shadow:0 1px 3px #181321}
 #exportState {min-height:1.3em;color:var(--muted);overflow-wrap:anywhere}
+
+.moment-card,.cue-editor {padding:16px;border:1px solid var(--line);border-radius:14px;background:#faf8fd}
+.moment-card small {margin-left:12px;color:var(--muted)}
+.moment-card p {margin:9px 0 14px;line-height:1.5}
+.cue-editor summary {cursor:pointer;font-weight:650}
+.cue-editor select,.cue-editor textarea {display:block;width:100%;margin:12px 0;padding:10px;border-radius:8px;border:1px solid var(--line);font:inherit}
+.caption-sample[data-motion=pop] span {text-transform:uppercase;animation:caption-pop 1.6s infinite}
+.caption-sample[data-motion=karaoke] b {color:white;border-radius:.3em;padding:0 .12em;animation:caption-word 1.8s step-end infinite}
+.caption-sample[data-motion=karaoke] b:nth-child(2) {animation-delay:.6s}
+.caption-sample[data-motion=karaoke] b:nth-child(3) {animation-delay:1.2s}
+@keyframes caption-pop {0%{transform:scale(.82)}8%{transform:scale(1.1)}15%,100%{transform:scale(1)}}
+@keyframes caption-word {0%{background:var(--caption-accent);color:#201629;text-shadow:none}33.333%,100%{background:transparent;color:white}}
+@media(prefers-reduced-motion:reduce){.caption-sample[data-motion] *{animation:none}}
