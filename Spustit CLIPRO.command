@@ -24,11 +24,17 @@ fi
 if ! .venv/bin/python -c 'import flask, requests, keyring' 2>/dev/null; then
   .venv/bin/python -m pip install -r requirements.txt
 fi
-if ! command -v yt-dlp >/dev/null; then
-  if command -v brew >/dev/null; then
-    brew install yt-dlp || echo "Import z YouTube vyžaduje yt-dlp. Lokálny editor je dostupný."
-  else
-    echo "Pre import z YouTube nainštaluj yt-dlp cez Homebrew."
+# Prefer the downloader and its matching YouTube components from this installation.
+if .venv/bin/python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then
+  if ! .venv/bin/python -c 'import yt_dlp_ejs; from yt_dlp.version import __version__; assert tuple(map(int, __version__.split(".")[:3])) >= (2026, 10, 26)' 2>/dev/null; then
+    .venv/bin/python -m pip install --upgrade 'yt-dlp[default]>=2026.10.26' || echo "Inštalácia lokálneho yt-dlp zlyhala."
   fi
+fi
+export PATH="$PWD/.venv/bin:$PATH"
+if ! command -v yt-dlp >/dev/null && command -v brew >/dev/null; then
+  brew install yt-dlp || echo "Inštalácia yt-dlp zlyhala."
+fi
+if ! command -v deno >/dev/null && command -v brew >/dev/null; then
+  brew install deno || echo "Inštalácia Deno pre import z YouTube zlyhala."
 fi
 exec .venv/bin/python launch_mac.py

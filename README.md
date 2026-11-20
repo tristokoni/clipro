@@ -2,7 +2,7 @@
 
 Lokálna webová aplikácia na upload videí, výber momentov a export klipov (9:16, 1:1 a 16:9). Skutočný export zabezpečuje FFmpeg, nie demo dáta.
 
-Na Macu rozbaľ CLIPRO-Mac.zip a otvor **Spustit CLIPRO.command**. V Nastaveniach môžeš uložiť alebo odstrániť API kľúče pre OpenAI a YouTube. Na macOS sa ukladajú do Kľúčenky. Na ostatných systémoch zostanú v pamäti do vypnutia aplikácie.
+Na Macu rozbaľ CLIPRO-Mac.zip a otvor **Spustit CLIPRO.command**. V Nastaveniach môžeš uložiť alebo odstrániť API kľúče pre OpenAI a YouTube. Tlačidlo Použiť pre túto reláciu aktivuje kľúč v pamäti. Na macOS ho môžeš trvalo uložiť do Kľúčenky. Test služby zavolá YouTube Data API alebo odošle dve sekundy ticha do Whisper API podľa cien projektu. Na ostatných systémoch zostanú v pamäti do vypnutia aplikácie.
 
 ## Manuálne spustenie
 
@@ -20,7 +20,7 @@ python app.py
 
 ## Import z YouTube
 
-V Prehľade vlož odkaz na konkrétne video alebo Shorts a klikni na **Stiahnuť do editora**. Rovnaké tlačidlo nájdeš pri videách v Trend Radare. Na Macu spúšťač doinštaluje yt-dlp cez Homebrew. Pri manuálnom spustení musí byť yt-dlp dostupný v PATH. Import podporuje ukončené verejne dostupné videá do 2 GB.
+V Prehľade vlož odkaz na konkrétne video alebo Shorts a klikni na **Stiahnuť do editora**. Rovnaké tlačidlo nájdeš pri videách v Trend Radare. Na Macu spúšťač s Pythonom 3.10+ doinštaluje yt-dlp a zodpovedajúce YouTube komponenty do lokálneho prostredia aplikácie. Ak je dostupný Homebrew, doplní chýbajúce Deno. Pri manuálnom spustení musí byť yt-dlp dostupný v PATH. Import podporuje ukončené verejne dostupné videá do 2 GB.
 
 ## Čo funguje
 - Upload vlastných MP4/MOV/MKV/WEBM/M4V súborov (max 2 GB)

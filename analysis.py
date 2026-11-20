@@ -12,6 +12,27 @@ class TranscriptionError(Exception):
         self.status = status
 
 
+def transcribe(audio, filename, api_key, read_timeout=300):
+    try:
+        response = requests.post(
+            'https://api.openai.com/v1/audio/transcriptions',
+            headers={'Authorization': 'Bearer ' + api_key},
+            files={'file': (filename, audio, 'audio/wav')},
+            data={'model': 'whisper-1', 'response_format': 'verbose_json',
+                  'timestamp_granularities[]': 'segment'},
+            timeout=(10, read_timeout), allow_redirects=False)
+    except requests.RequestException:
+        raise TranscriptionError('Spojenie s OpenAI zlyhalo. Skús to znova.', 502) from None
+    if response.status_code != 200:
+        errors = {401: 'OpenAI odmietlo API kľúč.', 403: 'Kľúč nemá prístup k prepisu.',
+                  429: 'OpenAI hlási prekročený limit. Skontroluj kredit alebo skús neskôr.'}
+        if response.status_code == 429 and 'insufficient_quota' in response.text:
+            errors[429] = 'OpenAI hlási vyčerpaný kredit alebo rozpočet API projektu. Skontroluj fakturáciu na platform.openai.com.'
+        raise TranscriptionError(errors.get(response.status_code, 'OpenAI nedokončilo prepis.'),
+                                 response.status_code if response.status_code in errors else 502)
+    return response.json()["segments"]
+
+
 def analyze(path, api_key):
     rows = []
     with tempfile.TemporaryDirectory() as directory:
@@ -25,22 +46,8 @@ def analyze(path, api_key):
         offset = 0.0
         for part in sorted(Path(directory).glob('*.wav')):
             with part.open('rb') as audio:
-                try:
-                    response = requests.post(
-                        'https://api.openai.com/v1/audio/transcriptions',
-                        headers={'Authorization': 'Bearer ' + api_key},
-                        files={'file': (part.name, audio, 'audio/wav')},
-                        data={'model': 'whisper-1', 'response_format': 'verbose_json',
-                              'timestamp_granularities[]': 'segment'},
-                        timeout=(10, 300), allow_redirects=False)
-                except requests.RequestException:
-                    raise TranscriptionError('Spojenie s OpenAI zlyhalo. Skús to znova.', 502) from None
-            if response.status_code != 200:
-                errors = {401: 'OpenAI odmietlo API kľúč.', 403: 'Kľúč nemá prístup k prepisu.',
-                          429: 'OpenAI hlási prekročený limit. Skontroluj kredit alebo skús neskôr.'}
-                raise TranscriptionError(errors.get(response.status_code, 'OpenAI nedokončilo prepis.'),
-                                         response.status_code if response.status_code in errors else 502)
-            for segment in response.json()['segments']:
+                segments = transcribe(audio, part.name, api_key)
+            for segment in segments:
                 text = segment['text'].strip()
                 if text:
                     rows.append(dict(start=round(offset + segment['start'], 3),

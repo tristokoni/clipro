@@ -3,15 +3,17 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from video_import import download_video, youtube_id
 from datetime import datetime
+import io
+import wave
 from flask import Response, Flask, request, jsonify, render_template, send_from_directory
 from werkzeug.utils import secure_filename
 
 ROOT = Path(__file__).resolve().parent
 UPLOAD = ROOT / 'uploads'; EXPORT = ROOT / 'exports'; DB = ROOT / 'projects.json'
 UPLOAD.mkdir(exist_ok=True); EXPORT.mkdir(exist_ok=True)
-from credentials import credential, settings
-from discovery import discovery
-from analysis import analyze, TranscriptionError
+from credentials import activate, credential, settings
+from discovery import discovery, youtube_items, YouTubeError
+from analysis import analyze, transcribe, TranscriptionError
 
 app = Flask(__name__)
 app.register_blueprint(discovery)
@@ -163,6 +165,38 @@ def project_analysis(pid):
         return jsonify(error='Skontroluj dostupnosť FFmpeg a zvukovú stopu videa.'), 422
     except (KeyError, TypeError, ValueError):
         return jsonify(error='OpenAI vrátilo neplatný prepis.'), 502
+
+@app.post('/api/settings/<provider>/test')
+def test_service(provider):
+    if provider not in ('openai', 'youtube'):
+        return jsonify(error='Neznáma služba.'), 404
+    payload = request.get_json()
+    candidate = payload.get('key', '') if isinstance(payload, dict) else ''
+    if not isinstance(candidate, str):
+        return jsonify(error='Skontroluj formát kľúča.'), 400
+    key = candidate.strip() or credential(provider)
+    if not key or not key.isascii() or not key.isprintable() or any(c.isspace() for c in key):
+        return jsonify(error='Vlož platný API kľúč.'), 400
+    try:
+        if provider == 'youtube':
+            youtube_items(key, limit=1)
+            if candidate.strip():
+                activate(provider, key)
+            return jsonify(message='YouTube Data API odpovedalo. Kľúč funguje pre Trend Radar.')
+        audio = io.BytesIO()
+        with wave.open(audio, 'wb') as sample:
+            sample.setparams((1, 2, 16000, 0, 'NONE', 'not compressed'))
+            sample.writeframes(bytes(2 * 16000 * 2))
+        audio.seek(0)
+        transcribe(audio, 'test.wav', key, read_timeout=30)
+        if candidate.strip():
+            activate(provider, key)
+        return jsonify(message='Whisper úspešne spracoval testovací zvuk.')
+    except (TranscriptionError, YouTubeError) as exc:
+        return jsonify(error=str(exc)), exc.status
+    except (ValueError, KeyError, TypeError):
+        return jsonify(error='Služba vrátila neplatnú odpoveď.'), 502
+
 
 @app.get('/api/health')
 def health():return jsonify(ffmpeg=bool(shutil.which('ffmpeg')),projects=len(load()))

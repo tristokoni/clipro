@@ -13,7 +13,8 @@ def youtube_id(url):
     if not isinstance(url, str):
         return None
     try:
-        parts = urlsplit(url.strip())
+        value = url.strip()
+        parts = urlsplit(value if '://' in value else 'https://' + value)
         host = parts.hostname
     except ValueError:
         return None
@@ -38,7 +39,7 @@ def download_video(video_id, directory):
         raise ValueError('Chýba yt-dlp. Na Macu znova otvor Spustit CLIPRO.command.')
     cmd = [
         executable, '--ignore-config', '--no-playlist', '--no-simulate',
-        '--match-filter', '!is_live & !is_upcoming', '--max-filesize', '2G',
+        '--match-filter', "!is_live & live_status!=?is_upcoming", '--max-filesize', '2G',
         '--socket-timeout', '15', '--retries', '2', '--newline', '--progress',
         '--progress-delta', '1', '--color', 'never',
         '--progress-template', 'download:PROGRESS %(progress.downloaded_bytes)s %(progress._percent_str)s',
@@ -84,6 +85,11 @@ def download_video(video_id, directory):
                     elif line.startswith('ERROR:'):
                         last_error = re.sub(r'https?://\S+', '[odkaz]', line[6:]).strip()[:360]
             if proc.wait():
+                detail = last_error.lower()
+                if 'private video' in detail or 'unavailable' in detail or 'members-only' in detail:
+                    raise ValueError('Video nie je verejne dostupné. Ak máš zdrojový súbor, otvor ho cez Vybrať súbor.')
+                if 'sign in' in detail:
+                    raise ValueError('YouTube vyžaduje prihlásenie pre toto video alebo pripojenie. V editore môžeš otvoriť vlastný súbor.')
                 raise ValueError('Sťahovanie zlyhalo. ' + (last_error or 'Skontroluj pripojenie a dostupnosť videa.'))
         finally:
             if proc.poll() is None:
